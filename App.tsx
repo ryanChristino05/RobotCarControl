@@ -1,118 +1,118 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React, { useState, useEffect } from 'react';
+import { View, Alert ,TouchableOpacity,Text} from 'react-native';
+import HomeScreen from './components/HomeScreen';
+import CarControlUI from './components/ControlCarUi';
+import { ThemeProvider } from './context/ThemeContext';
+import ModeSelectionScreen from './components/ModeSelectionScreen';
+import AutoModeScreen from './components/AutoModeScreen';
 
-import React from 'react';
-import type {PropsWithChildren} from 'react';
-import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from 'react-native';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+const App = () => {
+  const [hasStarted, setHasStarted] = useState(false);
+  const [mode, setMode] = useState<'manual' | 'auto' | null>(null);
+  const [speed, setSpeed] = useState(50);
+  const [connectionStatus, setConnectionStatus] = useState("Déconnecté");
+  const [ipAddress, setIpAddress]  = useState('192.168.121.133'); // valeur par défaut
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  const checkConnection = async () => {
+    try {
+      const response = await fetch(`http://${ipAddress}/ping`);
+      setConnectionStatus(response.ok ? "Connecté" : "Déconnecté");
+    } catch (error) {
+      setConnectionStatus("Déconnecté");
+    }
   };
 
-  return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
+  useEffect(() => {
+  checkConnection(); // Vérifie tout de suite avec la nouvelle IP
+  const interval = setInterval(checkConnection, 3000); // Continue à vérifier toutes les 3s
+  return () => clearInterval(interval); // Nettoie l'ancien interval
+}, [ipAddress]); // 🔁 Réagit à chaque changement de l'adresse IP
 
-const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
-  },
-});
+  const sendCommand = async (direction: string) => {
+    if (connectionStatus !== "Connecté") {
+      Alert.alert('Erreur', 'Aucune connexion Wi-Fi');
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://${ipAddress}/${direction}?speed=${speed}`);
+      const result = await response.json();
+      console.log("Réponse ESP8266 :", result);
+    } catch (error) {
+      console.error("Erreur d'envoi :", error);
+    }
+  };
+
+  const [activeDirection, setActiveDirection] = useState<string | null>(null);
+
+  const onStartMove = (direction: string) => {
+    console.log(`Déplacement : ${direction}`);
+    setActiveDirection(direction);
+    sendCommand(direction);
+  };
+
+  const onStopMove = () => {
+    setActiveDirection(null);
+    sendCommand("stop");
+  };
+
+  const onGoHome = () => {
+    if (mode === 'auto') {
+    fetch(`http://${ipAddress}/stopauto`)
+      .then(() => console.log('Mode automatique désactivé'))
+      .catch((err) => console.error('Erreur désactivation auto:', err));
+  }
+  setMode(null);
+  //setHasStarted(false);
+  };
+
+const onSelectMode = (selectedMode: 'manual' | 'auto') => {
+  setMode(selectedMode);
+
+  if (selectedMode === 'auto') {
+    // Envoyer une requête pour activer l’ultrason
+    fetch(`http://${ipAddress}/autonome`)
+      .then(() => console.log('Mode automatique activé'))
+      .catch((err) => console.error('Erreur activation auto:', err));
+  }
+};
+
+  return (
+    <ThemeProvider>
+      <View style={{ flex: 1 }}>
+      {!hasStarted ? (
+        <HomeScreen onStart={() => setHasStarted(true)} />
+      ) : !mode ? (
+        <ModeSelectionScreen 
+        onSelectMode={onSelectMode} 
+        onExit={() => setHasStarted(false)} 
+        connectionStatus={connectionStatus}
+        setIpAddress={setIpAddress}
+        ipAddress={ipAddress}/>
+
+      ) : mode === 'manual' ? (
+        <CarControlUI
+          speed={speed}
+          connectionStatus={connectionStatus}
+          onSpeedChange={setSpeed}
+          onStartMove={onStartMove}
+          onStopMove={onStopMove}
+          onGoHome={onGoHome}
+
+        />
+      ) :(
+          <AutoModeScreen
+           onGoHome={onGoHome}
+           connectionStatus={connectionStatus}
+            ipAddress={ipAddress}
+          />
+      )}
+    </View>
+    </ThemeProvider>
+  );
+};
 
 export default App;
